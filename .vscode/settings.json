@@ -1,0 +1,12 @@
+{
+    "java.project.sourcePaths": ["Project1Starter/src"],
+    "java.project.referencedLibraries": ["Project1Starter/lib/**/*.jar"],
+    "java.project.outputPath": "Project1Starter/out",
+    "java.configuration.runtimes": [
+        {
+            "name": "JavaSE-21",
+            "path": "C:\\Users\\dell\\.jdks\\jdk-21.0.12.1+1",
+            "default": true
+        }
+    ]
+}
