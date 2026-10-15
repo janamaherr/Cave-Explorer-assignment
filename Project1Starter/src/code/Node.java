@@ -11,12 +11,18 @@ package code;
  */
 public class Node<S> {
 
+    /** The problem state this node represents. */
     private final S state;
+    /** The node this one was generated from (null for the root). */
     private final Node<S> parent;
+    /** The operator applied to the parent to get here (null for the root). */
     private final String operator;
+    /** Number of operators from the root to this node. */
     private final int depth;
+    /** Accumulated path cost g(n) from the root to this node. */
     private final int pathCost;
 
+    /** Creates a node with all of its fields given explicitly. */
     public Node(S state, Node<S> parent, String operator, int depth, int pathCost) {
         this.state = state;
         this.parent = parent;
@@ -36,22 +42,27 @@ public class Node<S> {
                 depth + 1, pathCost + successor.getStepCost());
     }
 
+    /** The state stored in this node. */
     public S getState() {
         return state;
     }
 
+    /** The parent node, or null for the root. */
     public Node<S> getParent() {
         return parent;
     }
 
+    /** The operator that generated this node, or null for the root. */
     public String getOperator() {
         return operator;
     }
 
+    /** The depth of this node in the search tree (root = 0). */
     public int getDepth() {
         return depth;
     }
 
+    /** The path cost g(n) from the root to this node. */
     public int getPathCost() {
         return pathCost;
     }
@@ -63,6 +74,7 @@ public class Node<S> {
      */
     public String plan() {
         StringBuilder plan = new StringBuilder();
+        // Walk from this node up to the root, prepending each operator.
         for (Node<S> current = this; current.parent != null; current = current.parent) {
             if (plan.length() > 0) {
                 plan.insert(0, ',');

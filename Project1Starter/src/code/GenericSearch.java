@@ -44,23 +44,29 @@ import java.util.PriorityQueue;
  */
 public final class GenericSearch {
 
+    /** Utility class: only static methods, no instances. */
     private GenericSearch() {
     }
 
     /** The outcome of a search: the goal node (null on failure) and the expansion count. */
     public static final class Result<S> {
+        /** The goal node found, or null if there is no solution. */
         private final Node<S> goal;
+        /** Number of nodes chosen for expansion during the search. */
         private final int expandedNodes;
 
+        /** Creates a search result. */
         Result(Node<S> goal, int expandedNodes) {
             this.goal = goal;
             this.expandedNodes = expandedNodes;
         }
 
+        /** The goal node, or null if the search failed. */
         public Node<S> getGoal() {
             return goal;
         }
 
+        /** The number of expanded nodes. */
         public int getExpandedNodes() {
             return expandedNodes;
         }
@@ -88,10 +94,13 @@ public final class GenericSearch {
 
     /** The queue of generated-but-not-yet-expanded nodes (the frontier). */
     private interface Frontier<S> {
+        /** Inserts a newly generated node. */
         void add(Node<S> node);
 
+        /** Removes and returns the next node to expand. */
         Node<S> removeFront();
 
+        /** Whether no nodes are left. */
         boolean isEmpty();
     }
 
@@ -100,36 +109,48 @@ public final class GenericSearch {
      * broken by insertion order (FIFO) so the search is deterministic.
      */
     private static final class PriorityFrontier<S> implements Frontier<S> {
+        /** Nodes ordered by priority, then by insertion order. */
         private final PriorityQueue<Entry<S>> queue = new PriorityQueue<>(
                 Comparator.<Entry<S>>comparingInt(entry -> entry.priority)
                         .thenComparingLong(entry -> entry.order));
+        /** Computes the priority of a node (g for UC, g + h for A*). */
         private final EvaluationFunction<S> evaluation;
+        /** Counter used to break ties in FIFO order. */
         private long insertions;
 
+        /** Creates an empty frontier ordered by the given evaluation function. */
         PriorityFrontier(EvaluationFunction<S> evaluation) {
             this.evaluation = evaluation;
         }
 
+        /** Adds the node with its priority and insertion number. */
         @Override
         public void add(Node<S> node) {
             queue.add(new Entry<>(node, evaluation.evaluate(node), insertions++));
         }
 
+        /** Removes the node with the lowest priority. */
         @Override
         public Node<S> removeFront() {
             return queue.remove().node;
         }
 
+        /** Whether the priority queue is empty. */
         @Override
         public boolean isEmpty() {
             return queue.isEmpty();
         }
 
+        /** A queued node together with its priority and insertion number. */
         private static final class Entry<S> {
+            /** The queued node. */
             final Node<S> node;
+            /** Its evaluation (lower is expanded first). */
             final int priority;
+            /** When it was inserted (earlier wins ties). */
             final long order;
 
+            /** Creates a queue entry. */
             Entry(Node<S> node, int priority, long order) {
                 this.node = node;
                 this.priority = priority;
@@ -140,30 +161,37 @@ public final class GenericSearch {
 
     /** LIFO frontier used by depth-limited (depth-first) search. */
     private static final class StackFrontier<S> implements Frontier<S> {
+        /** The nodes, most recently added on top. */
         private final Deque<Node<S>> stack = new ArrayDeque<>();
 
+        /** Pushes the node on top of the stack. */
         @Override
         public void add(Node<S> node) {
             stack.push(node);
         }
 
+        /** Pops the most recently added node. */
         @Override
         public Node<S> removeFront() {
             return stack.pop();
         }
 
+        /** Whether the stack is empty. */
         @Override
         public boolean isEmpty() {
             return stack.isEmpty();
         }
     }
 
+    /** Computes the priority of a node in a priority frontier (lower first). */
     private interface EvaluationFunction<S> {
+        /** The priority of the node. */
         int evaluate(Node<S> node);
     }
 
     /** Extracts the value a redundancy table compares (lower is better). */
     private interface NodeMeasure<S> {
+        /** The measured value of the node. */
         int of(Node<S> node);
     }
 
@@ -206,9 +234,13 @@ public final class GenericSearch {
     // The general search loop
     // ------------------------------------------------------------------
 
+    /** The result of one run of the general search loop. */
     private static final class Outcome<S> {
+        /** The goal node found, or null. */
         Node<S> goal;
+        /** Number of nodes expanded in this run. */
         int expandedNodes;
+        /** Whether some node was not expanded because of the depth limit. */
         boolean cutOff;
     }
 
@@ -224,34 +256,48 @@ public final class GenericSearch {
                                                 Frontier<S> frontier, int depthLimit,
                                                 NodeMeasure<S> measure) {
         Outcome<S> outcome = new Outcome<>();
+        // Redundancy table: duplicate key -> nodes generated with that key.
         Map<Object, List<Node<S>>> recorded = new HashMap<>();
 
+        // Start with the root node in the queue.
         Node<S> root = Node.root(problem.initialState());
         record(problem, recorded, root, measure);
         frontier.add(root);
 
         while (!frontier.isEmpty()) {
+            // Choose the next node according to the strategy's queuing function.
             Node<S> node = frontier.removeFront();
 
             // Skip stale nodes: a dominating node was generated after this one.
             if (!isRecorded(problem, recorded, node)) {
                 continue;
             }
+            // Goal test when the node is chosen (needed for UC / A* optimality).
             if (problem.goalTest(node.getState())) {
                 outcome.goal = node;
                 return outcome;
             }
+            // Depth-limited search: do not expand nodes at the limit.
             if (node.getDepth() >= depthLimit) {
                 outcome.cutOff = true;
                 continue;
             }
 
+            // Expand the node: generate all its children.
             outcome.expandedNodes++;
             List<GenericSearchProblem.Successor<S>> successors = problem.successors(node.getState());
             // Children are added in reverse so that a LIFO frontier still
             // tries the operators in their natural order.
             for (int i = successors.size() - 1; i >= 0; i--) {
                 Node<S> child = node.child(successors.get(i));
+                // Depth-limited search: a child that needs more operators than
+                // the limit allows cannot reach a goal in this iteration, so it
+                // is cut off now instead of exploring its whole subtree.
+                if (depthLimit != Integer.MAX_VALUE
+                        && child.getDepth() + problem.minStepsToGoal(child.getState()) > depthLimit) {
+                    outcome.cutOff = true;
+                    continue;
+                }
                 if (record(problem, recorded, child, measure)) {
                     frontier.add(child);
                 }
@@ -268,8 +314,11 @@ public final class GenericSearch {
     private static <S> boolean record(GenericSearchProblem<S> problem,
                                       Map<Object, List<Node<S>>> recorded,
                                       Node<S> node, NodeMeasure<S> measure) {
+        // All recorded nodes with the same key (same position, key, doors...).
         List<Node<S>> similar = recorded.computeIfAbsent(
                 problem.duplicateKey(node.getState()), key -> new ArrayList<>());
+        // Discard the new node if an old one was reached no worse and is at
+        // least as good.
         for (Node<S> other : similar) {
             if (measure.of(other) <= measure.of(node)
                     && problem.dominates(other.getState(), node.getState())) {
@@ -283,6 +332,10 @@ public final class GenericSearch {
         return true;
     }
 
+    /**
+     * Whether the node is still in the redundancy table, i.e. no better node
+     * with the same key was generated after it.
+     */
     private static <S> boolean isRecorded(GenericSearchProblem<S> problem,
                                           Map<Object, List<Node<S>>> recorded, Node<S> node) {
         for (Node<S> other : recorded.get(problem.duplicateKey(node.getState()))) {

@@ -10,17 +10,24 @@ package code;
  */
 public final class CaveState {
 
+    /** Column of the explorer (0 = leftmost). */
     final int x;
+    /** Row of the explorer (0 = top). */
     final int y;
+    /** Energy left. */
     final int energy;
+    /** Meters of rope left. */
     final int rope;
+    /** Lives left. */
     final int lives;
+    /** Whether the explorer is holding a key. */
     final boolean carryingKey;
     /** Bit i is set while key i is still lying in the cave (not collected). */
     final int availableKeys;
     /** Bit i is set while door i is still locked. */
     final int lockedDoors;
 
+    /** Creates a state with all of its fields given explicitly. */
     CaveState(int x, int y, int energy, int rope, int lives, boolean carryingKey,
               int availableKeys, int lockedDoors) {
         this.x = x;
@@ -56,6 +63,7 @@ public final class CaveState {
      * number. Used as the redundancy key (see {@link CaveExplorer#duplicateKey}).
      */
     long keyWithoutResources() {
+        // Each field gets its own bits: x and y < 256, up to 16 keys, 8 doors.
         long key = x;
         key = (key << 8) | y;
         key = (key << 1) | (carryingKey ? 1 : 0);
@@ -64,6 +72,7 @@ public final class CaveState {
         return key;
     }
 
+    /** Two states are equal when every field is equal. */
     @Override
     public boolean equals(Object other) {
         if (this == other) {
@@ -78,6 +87,7 @@ public final class CaveState {
                 && availableKeys == that.availableKeys && lockedDoors == that.lockedDoors;
     }
 
+    /** Hash code consistent with equals. */
     @Override
     public int hashCode() {
         long hash = keyWithoutResources();

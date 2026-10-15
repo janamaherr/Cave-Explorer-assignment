@@ -40,6 +40,15 @@ public abstract class GenericSearchProblem<S> {
     }
 
     /**
+     * A lower bound on the number of operators still needed to reach a goal
+     * from the state. Depth-limited search uses it to cut branches that
+     * cannot reach a goal within the depth limit. The default (0) never cuts.
+     */
+    public int minStepsToGoal(S state) {
+        return 0;
+    }
+
+    /**
      * Groups states for redundant-state elimination: only states with equal
      * keys are ever compared with {@link #dominates}. By default this is the
      * state itself.
@@ -62,24 +71,31 @@ public abstract class GenericSearchProblem<S> {
 
     /** One applicable operator: its name, the state it leads to, and its cost. */
     public static final class Successor<S> {
+        /** Name of the operator, e.g. "left". */
         private final String operator;
+        /** The state reached by applying the operator. */
         private final S state;
+        /** The cost of applying the operator. */
         private final int stepCost;
 
+        /** Creates a successor triple. */
         public Successor(String operator, S state, int stepCost) {
             this.operator = operator;
             this.state = state;
             this.stepCost = stepCost;
         }
 
+        /** The operator name. */
         public String getOperator() {
             return operator;
         }
 
+        /** The resulting state. */
         public S getState() {
             return state;
         }
 
+        /** The step cost of the operator. */
         public int getStepCost() {
             return stepCost;
         }

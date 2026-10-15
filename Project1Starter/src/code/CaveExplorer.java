@@ -26,19 +26,29 @@ import java.util.PriorityQueue;
  */
 public class CaveExplorer extends GenericSearchProblem<CaveState> {
 
+    /** The explorer always starts with 3 lives. */
     private static final int INITIAL_LIVES = 3;
     /** Marks an unreachable target in the distance table / heuristics. */
     private static final int UNREACHABLE = Integer.MAX_VALUE / 4;
 
+    /** Number of rows (H). */
     private final int height;
+    /** Number of columns (W). */
     private final int width;
-    private final int[][] difficulty; // difficulty[y][x]; 0 means wall
+    /** difficulty[y][x]: energy needed to enter the cell; 0 means wall. */
+    private final int[][] difficulty;
+    /** Starting column of the explorer. */
     private final int startX;
+    /** Starting row of the explorer. */
     private final int startY;
+    /** Energy at the start (EN). */
     private final int initialEnergy;
+    /** Rope length at the start (RL). */
     private final int initialRope;
+    /** Coordinates of door i (in input order). */
     private final int[] doorX;
     private final int[] doorY;
+    /** Coordinates of key j (in input order). */
     private final int[] keyX;
     private final int[] keyY;
     /** Index of the door / key at [y][x], or -1 if there is none. */
@@ -48,6 +58,8 @@ public class CaveExplorer extends GenericSearchProblem<CaveState> {
     private final int lifeWeight;
     /** energyDistance[a][b]: minimum energy needed to walk from cell a to cell b. */
     private final int[][] energyDistance;
+    /** stepDistance[a][b]: minimum number of moves needed to walk from cell a to cell b. */
+    private final int[][] stepDistance;
 
     // ------------------------------------------------------------------
     // Entry point
@@ -60,6 +72,7 @@ public class CaveExplorer extends GenericSearchProblem<CaveState> {
      * @return "plan;livesUsed;energyUsed;expandedNodes", or "No Solution"
      */
     public static String solve(String initString, String strategy) {
+        // Build the problem, run the generic search, then format the answer.
         CaveExplorer problem = new CaveExplorer(initString);
         GenericSearch.Result<CaveState> result = GenericSearch.search(problem, strategy);
         Node<CaveState> goal = result.getGoal();
@@ -81,6 +94,7 @@ public class CaveExplorer extends GenericSearchProblem<CaveState> {
      * number of rows, W the number of columns, and (0,0) is the top-left cell.
      */
     private CaveExplorer(String initString) {
+        // Sections are separated by ';' (a trailing ';' gives no empty section).
         String[] parts = initString.split(";");
         int[] size = parseNumbers(parts[0]);
         height = size[0];
@@ -92,11 +106,13 @@ public class CaveExplorer extends GenericSearchProblem<CaveState> {
         initialEnergy = resources[0];
         initialRope = resources[1];
 
+        // One section per row of cell difficulties.
         difficulty = new int[height][];
         for (int y = 0; y < height; y++) {
             difficulty[y] = parseNumbers(parts[3 + y]);
         }
 
+        // The last two sections list the doors and the keys as x,y pairs.
         int[] doors = parseNumbers(parts.length > 3 + height ? parts[3 + height] : "");
         int[] keys = parseNumbers(parts.length > 4 + height ? parts[4 + height] : "");
         doorX = evenEntries(doors, 0);
@@ -106,10 +122,13 @@ public class CaveExplorer extends GenericSearchProblem<CaveState> {
         doorAt = indexGrid(doorX, doorY);
         keyAt = indexGrid(keyX, keyY);
 
+        // Precompute the cost of a life and the distance tables.
         lifeWeight = initialEnergy + 1;
-        energyDistance = computeEnergyDistances();
+        energyDistance = computeDistances(false);
+        stepDistance = computeDistances(true);
     }
 
+    /** Parses a comma-separated list of integers (spaces are ignored). */
     private static int[] parseNumbers(String text) {
         if (text.trim().isEmpty()) {
             return new int[0];
@@ -131,6 +150,7 @@ public class CaveExplorer extends GenericSearchProblem<CaveState> {
         return result;
     }
 
+    /** Builds a grid holding the index of the item at each cell, or -1. */
     private int[][] indexGrid(int[] xs, int[] ys) {
         int[][] grid = new int[height][width];
         for (int[] row : grid) {
@@ -146,20 +166,27 @@ public class CaveExplorer extends GenericSearchProblem<CaveState> {
     // Problem definition
     // ------------------------------------------------------------------
 
+    /** Start position and resources; every key is in the cave, every door locked. */
     @Override
     public CaveState initialState() {
         return new CaveState(startX, startY, initialEnergy, initialRope, INITIAL_LIVES,
                 false, (1 << keyX.length) - 1, (1 << doorX.length) - 1);
     }
 
+    /** Goal: no locked door left and at least one life. */
     @Override
     public boolean goalTest(CaveState state) {
         return state.lockedDoors == 0 && state.lives >= 1;
     }
 
+    /**
+     * Applies each of the 7 operators that is allowed in the state.
+     * Step cost = lives used * LIFE_WEIGHT + energy used.
+     */
     @Override
     public List<Successor<CaveState>> successors(CaveState state) {
         List<Successor<CaveState>> result = new ArrayList<>();
+        // The five movement operators as (dx, dy); row 0 is the top, so up is dy = -1.
         addMove(result, state, "left", -1, 0);
         addMove(result, state, "right", 1, 0);
         addMove(result, state, "climbup", 0, -1);
@@ -220,6 +247,7 @@ public class CaveExplorer extends GenericSearchProblem<CaveState> {
         }
     }
 
+    /** Whether (x, y) is inside the grid and not a wall. */
     private boolean isCave(int x, int y) {
         return x >= 0 && x < width && y >= 0 && y < height && difficulty[y][x] != 0;
     }
@@ -300,6 +328,34 @@ public class CaveExplorer extends GenericSearchProblem<CaveState> {
      * (part 1 of the heuristic), or UNREACHABLE.
      */
     private int minEnergyNeeded(CaveState state) {
+        return cheapestTour(state, energyDistance);
+    }
+
+    /**
+     * Lower bound on the number of actions still needed to reach a goal, used
+     * by iterative deepening to cut branches that cannot finish within the
+     * depth limit. It is the cheapest tour (as in minEnergyNeeded) counted in
+     * moves instead of energy, plus one unlock per locked door and one collect
+     * per locked door that is not covered by the key already being carried.
+     */
+    @Override
+    public int minStepsToGoal(CaveState state) {
+        int locked = Integer.bitCount(state.lockedDoors);
+        int moves = cheapestTour(state, stepDistance);
+        if (moves >= UNREACHABLE) {
+            return UNREACHABLE;
+        }
+        int collects = locked - (state.carryingKey && locked > 0 ? 1 : 0);
+        return moves + locked + collects;
+    }
+
+    /**
+     * Lower bound on the distance (measured by the given all-pairs table) of
+     * the rest of any solution: a first leg to the first unlocked door (via a
+     * key unless one is carried) plus one leg door -> key -> other door for
+     * every further locked door. Returns UNREACHABLE if no such tour exists.
+     */
+    private int cheapestTour(CaveState state, int[][] distance) {
         int lockedCount = Integer.bitCount(state.lockedDoors);
         if (lockedCount == 0) {
             return 0;
@@ -314,13 +370,13 @@ public class CaveExplorer extends GenericSearchProblem<CaveState> {
             }
             int doorCell = cell(doorX[door], doorY[door]);
             if (state.carryingKey) {
-                firstLeg = Math.min(firstLeg, energyDistance[here][doorCell]);
+                firstLeg = Math.min(firstLeg, distance[here][doorCell]);
             } else {
                 for (int key = 0; key < keyX.length; key++) {
                     if (isAvailable(state, key)) {
                         int keyCell = cell(keyX[key], keyY[key]);
                         firstLeg = Math.min(firstLeg,
-                                energyDistance[here][keyCell] + energyDistance[keyCell][doorCell]);
+                                distance[here][keyCell] + distance[keyCell][doorCell]);
                     }
                 }
             }
@@ -342,7 +398,7 @@ public class CaveExplorer extends GenericSearchProblem<CaveState> {
                     if (isAvailable(state, key)) {
                         int keyCell = cell(keyX[key], keyY[key]);
                         cheapestLeg = Math.min(cheapestLeg,
-                                energyDistance[fromCell][keyCell] + energyDistance[keyCell][toCell]);
+                                distance[fromCell][keyCell] + distance[keyCell][toCell]);
                     }
                 }
             }
@@ -398,10 +454,12 @@ public class CaveExplorer extends GenericSearchProblem<CaveState> {
         return energy >= UNREACHABLE || energy > state.energy;
     }
 
+    /** Whether door number {@code door} is still locked in the state. */
     private boolean isLocked(CaveState state, int door) {
         return (state.lockedDoors & (1 << door)) != 0;
     }
 
+    /** Whether key number {@code key} is still lying in the cave. */
     private boolean isAvailable(CaveState state, int key) {
         return (state.availableKeys & (1 << key)) != 0;
     }
@@ -410,16 +468,17 @@ public class CaveExplorer extends GenericSearchProblem<CaveState> {
     // Precomputed energy distances
     // ------------------------------------------------------------------
 
+    /** Index of cell (x, y) in the distance tables. */
     private int cell(int x, int y) {
         return y * width + x;
     }
 
     /**
-     * Runs Dijkstra from every cave cell, where entering a cell costs its
-     * difficulty. Walls are never entered; unreachable pairs stay
-     * UNREACHABLE.
+     * Runs Dijkstra from every cave cell. Entering a cell costs its difficulty
+     * (energy distances) or 1 (step distances, when {@code unitCost} is true).
+     * Walls are never entered; unreachable pairs stay UNREACHABLE.
      */
-    private int[][] computeEnergyDistances() {
+    private int[][] computeDistances(boolean unitCost) {
         int cells = height * width;
         int[][] distance = new int[cells][cells];
         int[][] directions = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
@@ -445,7 +504,7 @@ public class CaveExplorer extends GenericSearchProblem<CaveState> {
                         continue;
                     }
                     int next = cell(nx, ny);
-                    int candidate = dist[current] + difficulty[ny][nx];
+                    int candidate = dist[current] + (unitCost ? 1 : difficulty[ny][nx]);
                     if (candidate < dist[next]) {
                         dist[next] = candidate;
                         queue.add(new int[]{next, candidate});
