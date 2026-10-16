@@ -128,7 +128,7 @@ public class CaveExplorer extends GenericSearchProblem<CaveState> {
         stepDistance = computeDistances(true);
     }
 
-    /** Parses a comma-separated list of integers (spaces are ignored). */
+    /** Parses a comma-separated list of integers (spaces and newlines around numbers are ignored). */
     private static int[] parseNumbers(String text) {
         if (text.trim().isEmpty()) {
             return new int[0];
@@ -351,7 +351,7 @@ public class CaveExplorer extends GenericSearchProblem<CaveState> {
 
     /**
      * Lower bound on the distance (measured by the given all-pairs table) of
-     * the rest of any solution: a first leg to the first unlocked door (via a
+     * the rest of any solution: a first leg to the first door to be unlocked (via a
      * key unless one is carried) plus one leg door -> key -> other door for
      * every further locked door. Returns UNREACHABLE if no such tour exists.
      */

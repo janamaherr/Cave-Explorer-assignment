@@ -286,8 +286,9 @@ public final class GenericSearch {
             // Expand the node: generate all its children.
             outcome.expandedNodes++;
             List<GenericSearchProblem.Successor<S>> successors = problem.successors(node.getState());
-            // Children are added in reverse so that a LIFO frontier still
-            // tries the operators in their natural order.
+            // Children are added in reverse so that a LIFO frontier (ID) still
+            // tries the operators in their natural order. For UC / A* this only
+            // changes which of several equally cheap nodes is expanded first.
             for (int i = successors.size() - 1; i >= 0; i--) {
                 Node<S> child = node.child(successors.get(i));
                 // Depth-limited search: a child that needs more operators than
@@ -314,7 +315,8 @@ public final class GenericSearch {
     private static <S> boolean record(GenericSearchProblem<S> problem,
                                       Map<Object, List<Node<S>>> recorded,
                                       Node<S> node, NodeMeasure<S> measure) {
-        // All recorded nodes with the same key (same position, key, doors...).
+        // All recorded nodes with the same duplicate key (for the cave: same
+        // position, carried key, and keys / doors left).
         List<Node<S>> similar = recorded.computeIfAbsent(
                 problem.duplicateKey(node.getState()), key -> new ArrayList<>());
         // Discard the new node if an old one was reached no worse and is at
